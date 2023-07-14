@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Apr 16 21:41:04 2023
+
+@author: vivek
+"""
+import cv2
+import numpy as np
+
+# Read input video
+cap = cv2.VideoCapture('/home/vivek/VisionWorkspace/test/output_clip/ICC WT20 Ireland v Oman Match Highlights-Clip1.avi')
+
+# Parameters for optical flow calculation
+lk_params = dict(winSize=(15, 15), maxLevel=2,
+                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+# Create an empty histogram to accumulate optical flow directions
+histogram = np.zeros((8,), dtype=np.float32)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Convert frame to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # If this is the first frame, initialize previous points for optical flow
+    if 'prev_gray' not in locals():
+        prev_gray = gray
+        prev_points = cv2.goodFeaturesToTrack(prev_gray, 500, 0.01, 10)
+        continue
+
+    # Calculate optical flow
+    points, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, prev_points, None, **lk_params)
+
+    # Filter out points with low status
+    good_points = points[status == 1]
+    prev_good_points = prev_points[status == 1]
+
+    # Calculate optical flow directions
+    flow = good_points - prev_good_points
+    angles = np.arctan2(flow[:, 1], flow[:, 0])  # Calculate angles
+    angles_deg = np.degrees(angles)  # Convert angles to degrees
+    angles_deg[angles_deg < 0] += 360  # Convert negative angles to positive
+
+    # Accumulate angles into histogram
+    histogram, _ = np.histogram(angles_deg, bins=8, range=(0, 360), density=True, weights=None)
+    
+    # Normalize histogram
+    histogram /= np.sum(histogram)
+
+    # Update previous points for next frame
+    prev_gray = gray.copy()
+    prev_points = good_points.reshape(-1, 1, 2)
+
+    # Display frame and histogram
+    cv2.imshow('Frame', frame)
+    cv2.imshow('Histogram', histogram.reshape(-1, 1))
+    if cv2.waitKey(25) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
